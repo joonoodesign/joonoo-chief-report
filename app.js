@@ -820,26 +820,29 @@
   }
 
   /* ==================== 대표님 전용 암호화 금고 (AES-256-GCM) ==================== */
+  async function decryptVaultRows(rawItems) {
+    const decrypted = [];
+    for (const raw of rawItems || []) {
+      decrypted.push({
+        id: raw.id,
+        category: raw.category || "기타",
+        site: await decryptField(raw.siteEnc, state.vaultCryptoKey),
+        url: raw.urlEnc ? await decryptField(raw.urlEnc, state.vaultCryptoKey) : "",
+        user: await decryptField(raw.userEnc, state.vaultCryptoKey),
+        pass: await decryptField(raw.passEnc, state.vaultCryptoKey),
+        memo: raw.memoEnc ? await decryptField(raw.memoEnc, state.vaultCryptoKey) : "",
+        updatedAt: raw.updatedAt || "",
+      });
+    }
+    return decrypted;
+  }
+
   async function loadVault() {
     if (!state.vaultCryptoKey) return;
     try {
       const res = await apiCall("listVault");
       if (!res.ok) throw new Error(res.error || "금고 조회 실패");
-
-      const decrypted = [];
-      for (const raw of res.items || []) {
-        decrypted.push({
-          id: raw.id,
-          category: raw.category || "기타",
-          site: await decryptField(raw.siteEnc, state.vaultCryptoKey),
-          url: raw.urlEnc ? await decryptField(raw.urlEnc, state.vaultCryptoKey) : "",
-          user: await decryptField(raw.userEnc, state.vaultCryptoKey),
-          pass: await decryptField(raw.passEnc, state.vaultCryptoKey),
-          memo: raw.memoEnc ? await decryptField(raw.memoEnc, state.vaultCryptoKey) : "",
-          updatedAt: raw.updatedAt || "",
-        });
-      }
-      state.vaultItems = decrypted;
+      state.vaultItems = await decryptVaultRows(res.items);
       renderVaultList();
     } catch (err) {
       showToast(err.message || "금고 복호화/조회 중 오류");
@@ -990,6 +993,10 @@
       return;
     }
 
+    const saveBtn = $("vaultSaveBtn");
+    const prevBtnText = saveBtn.textContent;
+    saveBtn.disabled = true;
+    saveBtn.textContent = "🔐 암호화 저장 중...";
     try {
       const encItem = {
         id,
@@ -1003,10 +1010,15 @@
       const res = await apiCall("saveVaultItem", { item: encItem });
       if (!res.ok) throw new Error(res.error || "금고 저장 실패");
       resetVaultForm();
-      await loadVault();
+      state.vaultItems = await decryptVaultRows(res.items);
+      renderVaultList();
       showToast("🔐 AES-256 암호화되어 안전하게 저장되었습니다.");
     } catch (err) {
       showToast(err.message || "금고 저장 중 오류가 발생했습니다.");
+    } finally {
+      saveBtn.disabled = false;
+      if (!$("vaultEditId").value) saveBtn.textContent = "🔐 암호화하여 저장";
+      else saveBtn.textContent = prevBtnText;
     }
   }
 
@@ -1016,7 +1028,8 @@
       const res = await apiCall("deleteVaultItem", { id: item.id });
       if (!res.ok) throw new Error(res.error || "삭제 실패");
       state.revealedVaultIds.delete(item.id);
-      await loadVault();
+      state.vaultItems = await decryptVaultRows(res.items);
+      renderVaultList();
       showToast("삭제되었습니다.");
     } catch (err) {
       showToast(err.message || "삭제 중 오류");

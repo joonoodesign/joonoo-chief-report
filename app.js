@@ -8,8 +8,8 @@
   const SESSION_VKEY_KEY = "joonoo_chief_vkey_v1";
   const AUTO_LOCK_SEC = 300; // 5분 무입력 자동 잠금
 
-  // 기본 GAS URL (배포 완료 후 아래 값에 주입 가능, 미설정 시 로그인 화면 설정창에서 1회 입력)
-  const DEFAULT_GAS_URL = "";
+  // 기본 GAS URL (배포 완료된 주누디자인 대표님 전용 백엔드)
+  const DEFAULT_GAS_URL = "https://script.google.com/macros/s/AKfycbwTHnguDDA8UtnTClDr7F_ZqagzHzpVmyj6hmYglYVBZyaDyZ_kjcD22bbXvWjIJTEe9w/exec";
 
   const DEPTS = [
     { key: "chief", label: "총괄매니저", short: "총괄", color: "#1B365D" },

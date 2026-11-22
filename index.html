@@ -1,0 +1,321 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="robots" content="noindex, nofollow" />
+  <title>주누디자인 총괄 업무보고서 · 대표님 전용</title>
+  <link rel="manifest" href="./manifest.json?v=20261122_2130" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;600;700;800&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="./styles.css?v=20261122_2130" />
+</head>
+<body>
+  <!-- ==================== 1. 대표님 전용 6자리 PIN 잠금 화면 ==================== -->
+  <section id="lockScreen" class="lock-screen" aria-label="대표님 보안 로그인">
+    <div class="lock-card">
+      <div class="lock-badge">🔒 대표님 1인 전용 · AES-256 암호화</div>
+      <h1 class="lock-title">주누디자인 총괄 업무보고서</h1>
+      <p class="lock-sub">숫자 6자리 비밀번호를 입력해 주세요</p>
+
+      <div id="pinDots" class="pin-dots" aria-hidden="true">
+        <span class="pin-dot"></span>
+        <span class="pin-dot"></span>
+        <span class="pin-dot"></span>
+        <span class="pin-dot"></span>
+        <span class="pin-dot"></span>
+        <span class="pin-dot"></span>
+      </div>
+
+      <div id="lockMsg" class="lock-msg" role="alert"></div>
+
+      <div class="keypad" id="keypad">
+        <button type="button" class="key-btn" data-key="1">1</button>
+        <button type="button" class="key-btn" data-key="2">2</button>
+        <button type="button" class="key-btn" data-key="3">3</button>
+        <button type="button" class="key-btn" data-key="4">4</button>
+        <button type="button" class="key-btn" data-key="5">5</button>
+        <button type="button" class="key-btn" data-key="6">6</button>
+        <button type="button" class="key-btn" data-key="7">7</button>
+        <button type="button" class="key-btn" data-key="8">8</button>
+        <button type="button" class="key-btn" data-key="9">9</button>
+        <button type="button" class="key-btn sub" data-key="clear">지움</button>
+        <button type="button" class="key-btn" data-key="0">0</button>
+        <button type="button" class="key-btn sub" data-key="back">⌫</button>
+      </div>
+
+      <div class="server-box">
+        <button type="button" id="toggleServerBtn" class="server-toggle">⚙ 구글 서버(GAS) 주소 연결 설정</button>
+        <div id="serverForm" class="server-form hidden">
+          <input type="url" id="gasUrlInput" placeholder="https://script.google.com/macros/s/.../exec" />
+          <div style="display:flex; gap:6px;">
+            <button type="button" id="saveGasUrlBtn" class="btn btn-primary btn-sm" style="flex:1;">주소 저장 · 연결 테스트</button>
+          </div>
+          <div id="serverStatusText" style="font-size:11.5px; color:#64748B;"></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ==================== 2. 메인 앱 화면 ==================== -->
+  <div id="appShell" class="hidden">
+    <header class="topbar no-print">
+      <div class="brand">
+        <div class="brand-mark">주</div>
+        <div>
+          <div class="brand-title">주누디자인 총괄 업무보고서</div>
+          <div class="brand-sub">달력형 매니저 일지 · 전자결재 · 대표님 암호화 금고 <span id="appVerTag">v1.0</span></div>
+        </div>
+      </div>
+
+      <nav class="nav-tabs" aria-label="주 메뉴">
+        <button type="button" class="nav-tab active" data-view="report">📅 업무보고서 · 달력</button>
+        <button type="button" class="nav-tab" data-view="vault">🔐 나만의 아이디·비번 금고</button>
+      </nav>
+
+      <div class="top-actions">
+        <span id="autoLockTimer" class="timer-pill" title="무입력 자동 잠금 남은 시간">자동잠금 05:00</span>
+        <button type="button" id="refreshBtn" class="btn btn-ghost btn-sm">↻ 새로고침</button>
+        <button type="button" id="lockNowBtn" class="btn btn-ghost btn-sm">🔒 즉시 잠금</button>
+      </div>
+    </header>
+
+    <main class="main-wrap">
+      <!-- ==================== 탭 1: 업무보고서 & 달력 ==================== -->
+      <section id="reportView">
+        <!-- 월간 요약 통계 -->
+        <div class="stats-bar no-print">
+          <div class="stat-card">
+            <span class="stat-label">선택 월 총 보고 건수</span>
+            <span id="statMonthLogs" class="stat-value">0건</span>
+            <span id="statActiveDays" class="stat-sub">기록된 날짜 0일</span>
+          </div>
+          <div class="stat-card">
+            <span class="stat-label">대표님 결재 완료</span>
+            <span id="statApproved" class="stat-value">0일</span>
+            <span id="statApprovedSub" class="stat-sub">이번 달 결재 현황</span>
+          </div>
+          <div class="stat-card">
+            <span class="stat-label">미완료 이월 할 일</span>
+            <span id="statCarryOpen" class="stat-value">0건</span>
+            <span class="stat-sub">완료 체크 시 자동 반영</span>
+          </div>
+          <div class="stat-card">
+            <span class="stat-label">다가오는 세무·노무 일정</span>
+            <span id="statNextTax" class="stat-value">-</span>
+            <span id="statNextTaxSub" class="stat-sub">법정 마감일 자동 계산</span>
+          </div>
+        </div>
+
+        <!-- 전체 기간 통합 검색 -->
+        <div class="search-bar-wrap no-print">
+          <input type="text" id="searchQueryInput" placeholder="과거 업무 통합 검색 (예: 리바디, 스타드림, 스킨8, 급여, 곰돌이, 문자센터...)" />
+          <select id="searchDeptSelect" aria-label="부서 필터">
+            <option value="ALL">전체 부서</option>
+            <option value="chief">총괄매니저</option>
+            <option value="market">① 마켓·정산·CS</option>
+            <option value="ads">② 광고·SEO</option>
+            <option value="cafe24">③ 자사몰(카페24)</option>
+            <option value="design">④ 어도비 디자인</option>
+            <option value="blog">⑤ 블로그·마케팅</option>
+            <option value="youtube">⑥ 유튜브·영상</option>
+            <option value="tax">⑦ 세무·회계·노무</option>
+          </select>
+          <button type="button" id="searchBtn" class="btn btn-primary">🔍 검색</button>
+          <button type="button" id="clearSearchBtn" class="btn hidden">닫기</button>
+        </div>
+
+        <div id="searchResultsBox" class="search-results hidden no-print"></div>
+
+        <!-- 2단 메인: 좌측 달력 + 이월 / 우측 선택일 업무보고서 -->
+        <div class="workspace-grid">
+          <!-- 좌측 컬럼 -->
+          <div class="cal-column no-print">
+            <div class="panel">
+              <div class="panel-head">
+                <h2 class="panel-title">월간 업무 달력</h2>
+                <div class="cal-controls">
+                  <button type="button" id="prevMonthBtn" class="btn btn-sm">◀</button>
+                  <span id="calMonthLabel" class="cal-month-label">2026년 11월</span>
+                  <button type="button" id="nextMonthBtn" class="btn btn-sm">▶</button>
+                  <button type="button" id="todayBtn" class="btn btn-sm">오늘</button>
+                </div>
+              </div>
+
+              <div class="cal-weekdays">
+                <span>일</span><span>월</span><span>화</span><span>수</span><span>목</span><span>금</span><span>토</span>
+              </div>
+              <div id="calendarGrid" class="cal-grid"></div>
+
+              <div class="legend-wrap" id="deptLegend"></div>
+            </div>
+
+            <!-- 미완료 이월 할 일 추적기 -->
+            <div class="panel carryover-box">
+              <div class="panel-head">
+                <h2 class="panel-title">📌 미완료 이월 할 일</h2>
+                <label style="font-size:12px; color:#64748B; display:flex; align-items:center; gap:4px;">
+                  <input type="checkbox" id="showDoneCarryChk" /> 완료 포함
+                </label>
+              </div>
+              <div class="panel-body">
+                <form id="carryoverForm" class="carryover-form">
+                  <select id="coDeptSelect">
+                    <option value="총괄매니저">총괄</option>
+                    <option value="① 마켓·정산·CS">① 마켓·CS</option>
+                    <option value="② 광고·SEO">② 광고·SEO</option>
+                    <option value="③ 자사몰(카페24)">③ 자사몰</option>
+                    <option value="④ 어도비 디자인">④ 디자인</option>
+                    <option value="⑤ 블로그·마케팅">⑤ 블로그</option>
+                    <option value="⑥ 유튜브·영상">⑥ 유튜브</option>
+                    <option value="⑦ 세무·회계·노무">⑦ 세무·노무</option>
+                  </select>
+                  <input type="text" id="coTitleInput" placeholder="이월 할 일 등록..." required />
+                  <button type="submit" class="btn btn-primary btn-sm">추가</button>
+                </form>
+                <div id="carryoverList" class="carryover-list"></div>
+              </div>
+            </div>
+          </div>
+
+          <!-- 우측 컬럼: 선택 날짜 총괄 업무보고서 -->
+          <div class="panel" id="reportPanel">
+            <div class="panel-head no-print">
+              <h2 class="panel-title">일일 총괄 업무보고서</h2>
+              <div class="report-toolbar">
+                <button type="button" id="toggleCompactBtn" class="btn btn-sm">핵심 요약 모드</button>
+                <button type="button" id="approveBtn" class="btn btn-ok btn-sm">✅ 대표님 결재 승인</button>
+                <button type="button" id="printReportBtn" class="btn btn-primary btn-sm">🖨️ A4 보고서 인쇄</button>
+              </div>
+            </div>
+
+            <!-- 인쇄 포함 표준 헤더 + 3단 결재란 -->
+            <div class="report-header-box">
+              <div>
+                <h2 id="reportDocTitle" class="report-doc-title">주누디자인 일일 업무보고서</h2>
+                <div id="reportDocMeta" class="report-doc-meta">날짜를 선택해 주세요</div>
+              </div>
+              <div class="approval-grid" aria-label="결재란">
+                <div class="appr-col">
+                  <div class="appr-head">담 당</div>
+                  <div class="appr-stamp-cell" id="stampStaff">각 매니저</div>
+                </div>
+                <div class="appr-col">
+                  <div class="appr-head">총 괄</div>
+                  <div class="appr-stamp-cell" id="stampChief">취합완료</div>
+                </div>
+                <div class="appr-col">
+                  <div class="appr-head">대 표</div>
+                  <div class="appr-stamp-cell" id="stampCeo">미결재</div>
+                </div>
+              </div>
+            </div>
+
+            <div id="dayTaxBanner" class="tax-banner hidden"></div>
+
+            <!-- 부서별 필터 탭 -->
+            <div id="deptTabs" class="dept-tabs no-print"></div>
+
+            <!-- 부서별 일지 카드 컨테이너 -->
+            <div id="deptCards" class="dept-cards"></div>
+
+            <!-- 대표님 총괄 지시 메모 (다음 날 회의 안건 1순위 자동 연결) -->
+            <div class="chief-note-box">
+              <label for="chiefNoteInput">✍️ 대표님 지시사항 · 다음 날 회의 안건 메모</label>
+              <textarea id="chiefNoteInput" placeholder="예: 내일 네이버 광고 입찰가 재확인 / 리플렛 상세페이지 점검 지시..."></textarea>
+              <div class="chief-note-actions no-print">
+                <span id="approvalStatusText">저장 시 구글 시트(대표님_결재및지시)에 즉시 기록됩니다.</span>
+                <button type="button" id="saveNoteBtn" class="btn btn-primary btn-sm">💾 지시 메모 저장</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ==================== 탭 2: 대표님 전용 아이디·비밀번호 금고 (인쇄 시 100% 제외) ==================== -->
+      <section id="vaultView" class="hidden no-print">
+        <div class="vault-security-note">
+          🔐 <strong>대표님 1인 전용 암호화 금고 (AES-256-GCM)</strong> — 모든 사이트·아이디·비밀번호는 브라우저에서 암호화되어 구글 시트에는 알아볼 수 없는 암호문만 저장됩니다. A4 인쇄 시에는 절대 출력되지 않습니다.
+        </div>
+
+        <div class="vault-layout">
+          <!-- 등록/수정 폼 -->
+          <div class="panel">
+            <div class="panel-head">
+              <h2 id="vaultFormTitle" class="panel-title">새 계정 안전 등록</h2>
+              <button type="button" id="vaultResetBtn" class="btn btn-sm hidden">취소</button>
+            </div>
+            <div class="panel-body">
+              <form id="vaultForm" class="form-stack">
+                <input type="hidden" id="vaultEditId" />
+                <div class="field">
+                  <label for="vaultCategory">카테고리</label>
+                  <select id="vaultCategory">
+                    <option value="쇼핑몰·마켓">쇼핑몰·마켓</option>
+                    <option value="광고·마케팅">광고·마케팅</option>
+                    <option value="서버·호스팅">서버·호스팅</option>
+                    <option value="세무·은행">세무·은행</option>
+                    <option value="AI·프로그램">AI·프로그램</option>
+                    <option value="개인·기타">개인·기타</option>
+                  </select>
+                </div>
+                <div class="field">
+                  <label for="vaultSite">사이트 / 서비스명 *</label>
+                  <input type="text" id="vaultSite" placeholder="예: 네이버 스마트스토어, 카페24, 홈택스" required />
+                </div>
+                <div class="field">
+                  <label for="vaultUrl">접속 주소 (선택)</label>
+                  <input type="url" id="vaultUrl" placeholder="https://..." />
+                </div>
+                <div class="field">
+                  <label for="vaultUser">아이디 *</label>
+                  <input type="text" id="vaultUser" autocomplete="off" required />
+                </div>
+                <div class="field">
+                  <label for="vaultPass">비밀번호 *</label>
+                  <div style="display:flex; gap:6px;">
+                    <input type="password" id="vaultPass" autocomplete="new-password" required style="flex:1;" />
+                    <button type="button" id="toggleFormPassBtn" class="btn btn-sm">👁</button>
+                  </div>
+                </div>
+                <div class="field">
+                  <label for="vaultMemo">메모 (2차인증 힌트·담당 등, 선택)</label>
+                  <textarea id="vaultMemo" rows="3" placeholder="예: 회사 공용 계정 / 2단계 인증 대표님 폰"></textarea>
+                </div>
+                <button type="submit" id="vaultSaveBtn" class="btn btn-primary">🔐 암호화하여 저장</button>
+              </form>
+            </div>
+          </div>
+
+          <!-- 금고 목록 -->
+          <div class="panel">
+            <div class="panel-head">
+              <h2 class="panel-title">보관 중인 계정 (<span id="vaultCount">0</span>)</h2>
+              <div style="display:flex; gap:6px; flex-wrap:wrap;">
+                <select id="vaultFilterCat">
+                  <option value="ALL">전체 카테고리</option>
+                  <option value="쇼핑몰·마켓">쇼핑몰·마켓</option>
+                  <option value="광고·마케팅">광고·마케팅</option>
+                  <option value="서버·호스팅">서버·호스팅</option>
+                  <option value="세무·은행">세무·은행</option>
+                  <option value="AI·프로그램">AI·프로그램</option>
+                  <option value="개인·기타">개인·기타</option>
+                </select>
+                <input type="text" id="vaultSearchInput" placeholder="사이트·아이디·메모 검색..." />
+              </div>
+            </div>
+            <div class="panel-body">
+              <div id="vaultCards" class="vault-cards"></div>
+            </div>
+          </div>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <div id="toast" class="toast" role="status" aria-live="polite"></div>
+
+  <script src="./app.js?v=20261122_2130"></script>
+</body>
+</html>

@@ -1,0 +1,9 @@
+{
+  "name": "주누디자인 총괄 업무보고서",
+  "short_name": "주누업무보고",
+  "description": "주누디자인 대표님 전용 달력형 총괄 업무보고서 · 전자결재 · 암호화 금고",
+  "start_url": "./index.html",
+  "display": "standalone",
+  "background_color": "#F4F6FA",
+  "theme_color": "#1B365D"
+}

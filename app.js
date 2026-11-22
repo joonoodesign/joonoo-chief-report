@@ -1,12 +1,13 @@
-/* 주누디자인 대표님 전용 총괄 업무보고서 · 달력 · AES-256 암호화 금고 (v1.0.0) */
+/* 주누디자인 대표님 전용 공식 총괄 업무보고서 · 달력 · AES-256 암호화 금고 (v2.0.0) */
 (() => {
   "use strict";
 
-  const APP_VERSION = "v1.0.0";
+  const APP_VERSION = "v2.0.0";
   const STORAGE_GAS_URL = "joonoo_chief_gas_url_v1";
   const SESSION_TOKEN_KEY = "joonoo_chief_token_v1";
   const SESSION_VKEY_KEY = "joonoo_chief_vkey_v1";
   const AUTO_LOCK_SEC = 300; // 5분 무입력 자동 잠금
+  const AUTO_SYNC_MS = 60000; // 60초 주기 회사↔집 실시간 자동 최신화
 
   // 기본 GAS URL (배포 완료된 주누디자인 대표님 전용 백엔드)
   const DEFAULT_GAS_URL = "https://script.google.com/macros/s/AKfycbwTHnguDDA8UtnTClDr7F_ZqagzHzpVmyj6hmYglYVBZyaDyZ_kjcD22bbXvWjIJTEe9w/exec";
@@ -38,13 +39,16 @@
     currentMonth: todayStr().slice(0, 7),
     selectedDate: todayStr(),
     selectedDept: "ALL",
-    compactMode: false,
+    expandedDepts: new Set(),
     monthCache: {},
     carryovers: [],
     vaultItems: [],
     revealedVaultIds: new Set(),
     lastActivityAt: Date.now(),
+    lastSyncAt: 0,
+    lastSyncStr: "",
     timerId: null,
+    syncTimerId: null,
   };
 
   /* ==================== DOM 헬퍼 (XSS 차단: textContent 전용) ==================== */
@@ -306,6 +310,7 @@
     $("appVerTag").textContent = APP_VERSION;
     touchActivity();
     startAutoLockLoop();
+    startAutoSyncLoop();
     loadMonth(state.currentMonth, true);
   }
 
@@ -315,11 +320,14 @@
     state.vaultCryptoKey = null;
     state.vaultItems = [];
     state.revealedVaultIds.clear();
+    state.expandedDepts.clear();
     state.monthCache = {};
     sessionStorage.removeItem(SESSION_TOKEN_KEY);
     sessionStorage.removeItem(SESSION_VKEY_KEY);
     clearInterval(state.timerId);
+    clearInterval(state.syncTimerId);
     state.timerId = null;
+    state.syncTimerId = null;
 
     $("appShell").classList.add("hidden");
     $("lockScreen").classList.remove("hidden");
@@ -351,8 +359,29 @@
     }, 1000);
   }
 
+  function startAutoSyncLoop() {
+    clearInterval(state.syncTimerId);
+    state.syncTimerId = setInterval(() => {
+      if (!state.token || document.hidden || state.currentView !== "report") return;
+      // 사용자가 지시 메모를 작성 중이면 입력 내용을 방해하지 않도록 자동 덮어쓰기 보류
+      const active = document.activeElement;
+      if (active && (active.tagName === "TEXTAREA" || active.tagName === "INPUT")) return;
+      loadMonth(state.currentMonth, true, true);
+    }, AUTO_SYNC_MS);
+  }
+
+  function updateSyncIndicators(fetchedAt) {
+    state.lastSyncAt = Date.now();
+    const hm = fetchedAt ? String(fetchedAt).slice(11, 19) : new Date().toTimeString().slice(0, 8);
+    state.lastSyncStr = hm;
+    const badge = $("liveSyncText");
+    if (badge) badge.textContent = `실시간 동기화 · ${hm}`;
+    const metaSync = $("metaSyncVal");
+    if (metaSync) metaSync.textContent = `최신 반영 ${hm}`;
+  }
+
   /* ==================== 월간 데이터 로딩 & 달력 렌더링 ==================== */
-  async function loadMonth(ym, force = false) {
+  async function loadMonth(ym, force = false, silent = false) {
     state.currentMonth = ym;
     const [y, m] = ym.split("-").map(Number);
     $("calMonthLabel").textContent = `${y}년 ${m}월`;
@@ -367,6 +396,7 @@
       if (!res.ok) throw new Error(res.error || "데이터 조회 실패");
       state.monthCache[ym] = res;
       state.carryovers = res.carryovers || [];
+      updateSyncIndicators(res.fetchedAt);
 
       // 선택 날짜가 해당 월에 없으면 기록 있는 최신 날짜 또는 오늘로 이동
       if (!state.selectedDate.startsWith(ym)) {
@@ -375,7 +405,7 @@
       }
       renderAllReportPanels();
     } catch (err) {
-      showToast(err.message || "월간 데이터를 불러오지 못했습니다.");
+      if (!silent) showToast(err.message || "월간 데이터를 불러오지 못했습니다.");
     }
   }
 
@@ -524,7 +554,26 @@
     }
   }
 
-  /* ==================== 선택일 보고서 & 매니저별 일지 ==================== */
+  /* ==================== 선택일 공식 업무보고서 양식 + 클릭 상세 펼침 (v2.0) ==================== */
+  function splitPoints(text) {
+    return String(text || "")
+      .split(/\s*;\s*|\n+/)
+      .map((s) => s.trim())
+      .filter(Boolean);
+  }
+
+  function statusBadgeClass(s) {
+    if (!s || s.includes("완료")) return "done";
+    if (s.includes("진행")) return "prog";
+    return "wait";
+  }
+
+  function qaBadgeClass(s) {
+    if (!s || s.includes("통과") || s.includes("PASS")) return "pass";
+    if (s.includes("점검") || s.includes("반려") || s.includes("주의")) return "warn";
+    return "wait";
+  }
+
   function renderSelectedDayReport() {
     const dateStr = state.selectedDate;
     const data = state.monthCache[state.currentMonth] || { logs: [], approvals: {} };
@@ -537,8 +586,25 @@
       deptNotes: {},
     };
 
-    $("reportDocTitle").textContent = `주누디자인 일일 총괄 업무보고서 — ${formatKoreanDate(dateStr)}`;
-    $("reportDocMeta").textContent = `기록 건수: ${dayLogs.length}건 · 통합 허브: Google Sheets(일일_업무일지) 실시간 연동`;
+    // 부서별 그룹핑
+    const grouped = {};
+    for (const d of DEPTS) grouped[d.key] = [];
+    for (const lg of dayLogs) {
+      const k = lg.deptKey === "all" ? "chief" : (DEPT_MAP[lg.deptKey] ? lg.deptKey : "chief");
+      grouped[k].push(lg);
+    }
+
+    const activeDeptList = DEPTS.filter((d) => grouped[d.key].length > 0);
+    const qaPassCnt = dayLogs.filter((l) => !l.qa || l.qa.includes("통과") || l.qa.includes("PASS")).length;
+
+    // 공식 문서 헤더 + 메타바
+    $("reportDocNo").textContent = `JD-${dateStr.replace(/-/g, "")}`;
+    $("reportDocTitle").textContent = `일일 총괄 업무보고서 — ${formatKoreanDate(dateStr)}`;
+    $("reportDocMeta").textContent = "주누디자인 대표님 전결 · Google Sheets 중앙 클라우드 실시간 동기화 (회사 PC · 집 PC · 모바일 동일)";
+    $("metaDateVal").textContent = formatKoreanDate(dateStr);
+    $("metaCountVal").textContent = `${activeDeptList.length}개 부서 · 총 ${dayLogs.length}건`;
+    $("metaQaVal").textContent = dayLogs.length ? `${qaPassCnt}/${dayLogs.length} 통과` : "기록 없음";
+    $("metaSyncVal").textContent = state.lastSyncStr ? `최신 반영 ${state.lastSyncStr}` : "연결 완료";
 
     // 결재 도장 영역
     const stampCeo = $("stampCeo");
@@ -560,14 +626,6 @@
       taxBanner.classList.remove("hidden");
     } else {
       taxBanner.classList.add("hidden");
-    }
-
-    // 부서별 그룹핑
-    const grouped = {};
-    for (const d of DEPTS) grouped[d.key] = [];
-    for (const lg of dayLogs) {
-      const k = lg.deptKey === "all" ? "chief" : (DEPT_MAP[lg.deptKey] ? lg.deptKey : "chief");
-      grouped[k].push(lg);
     }
 
     // 부서 필터 탭
@@ -596,91 +654,238 @@
       tab.appendChild(el("span", { class: "cnt" }, `(${cnt})`));
       tab.addEventListener("click", () => {
         state.selectedDept = d.key;
+        state.expandedDepts.add(`${dateStr}:${d.key}`);
         renderSelectedDayReport();
       });
       tabsWrap.appendChild(tab);
     }
 
-    // 부서 카드 출력
-    const cardsWrap = $("deptCards");
-    clearEl(cardsWrap);
+    // 공식 업무보고서 표 + 클릭 아코디언 상세 서랍
+    const host = $("reportTableHost");
+    clearEl(host);
 
-    const targetDepts = state.selectedDept === "ALL" ? DEPTS : DEPTS.filter((d) => d.key === state.selectedDept);
-    let renderedCount = 0;
+    const targetDepts = state.selectedDept === "ALL"
+      ? activeDeptList
+      : DEPTS.filter((d) => d.key === state.selectedDept);
 
-    for (const d of targetDepts) {
-      const items = grouped[d.key];
-      if (state.selectedDept === "ALL" && items.length === 0) continue;
-      renderedCount++;
+    // 전체 펼침 버튼 라벨 갱신
+    const allExpanded = targetDepts.length > 0 && targetDepts.every((d) => state.expandedDepts.has(`${dateStr}:${d.key}`));
+    $("toggleExpandAllBtn").textContent = allExpanded ? "📁 전체 상세 접기" : "📂 전체 상세 펼치기";
 
-      const card = el("article", {
-        class: "dept-card",
-        style: { borderLeftColor: d.color },
-      });
+    if (targetDepts.length === 0) {
+      host.appendChild(
+        el("div", {
+          style: {
+            textAlign: "center",
+            padding: "40px 16px",
+            color: "#64748B",
+            fontSize: "13.5px",
+            border: "1px dashed #CBD5E1",
+            borderRadius: "10px",
+          },
+        }, "이 날짜에는 아직 기록된 업무보고서가 없습니다. 왼쪽 달력에서 부서 점(●)이 표시된 날짜를 클릭해 보세요.")
+      );
+    } else {
+      const table = el("table", { class: "report-sheet-table" });
+      const thead = el("thead");
+      const htr = el("tr");
+      htr.appendChild(el("th", null, "부서 / 담당"));
+      htr.appendChild(el("th", null, "핵심 업무 주제목 (클릭하여 상세 보기)"));
+      htr.appendChild(el("th", { class: "col-center", style: { width: "70px" } }, "상태"));
+      htr.appendChild(el("th", { class: "col-center", style: { width: "74px" } }, "QA감리"));
+      htr.appendChild(el("th", { class: "col-center no-print", style: { width: "52px" } }, "상세"));
+      thead.appendChild(htr);
+      table.appendChild(thead);
 
-      const head = el("div", { class: "dept-card-head" });
-      head.appendChild(el("span", { class: "dept-name" }, d.label));
-      head.appendChild(el("span", { class: "dept-pill" }, `${items.length}건 기록`));
-      card.appendChild(head);
+      const tbody = el("tbody");
 
-      if (items.length === 0) {
-        const empty = el("div", { style: { padding: "12px 14px", fontSize: "12.5px", color: "#64748B" } }, "이 날짜에는 해당 부서의 기록이 없습니다.");
-        card.appendChild(empty);
-      } else {
-        const ul = el("ul", { class: "log-list" });
-        for (const lg of items) {
-          const li = el("li", { class: "log-row" });
-          li.appendChild(el("span", { class: "log-time" }, lg.time || "--:--"));
+      for (const d of targetDepts) {
+        const items = grouped[d.key];
+        const rowKey = `${dateStr}:${d.key}`;
+        const isExpanded = state.expandedDepts.has(rowKey);
 
-          const body = el("div", { style: { flex: "1", minWidth: "0" } });
-          if (lg.category) body.appendChild(el("span", { class: "log-cat" }, lg.category));
+        // 요약 행
+        const tr = el("tr", { class: `rpt-summary-row ${isExpanded ? "expanded" : ""}` });
+        tr.addEventListener("click", () => {
+          if (state.expandedDepts.has(rowKey)) state.expandedDepts.delete(rowKey);
+          else state.expandedDepts.add(rowKey);
+          renderSelectedDayReport();
+        });
 
-          const displayText = state.compactMode && lg.content.length > 90
-            ? lg.content.slice(0, 90) + "…"
-            : lg.content;
-          body.appendChild(el("span", null, displayText));
+        const tdDept = el("td", { class: "rpt-dept-cell", style: { borderLeftColor: d.color } });
+        tdDept.appendChild(el("span", null, d.label));
+        tdDept.appendChild(el("span", { class: "rpt-dept-sub" }, `${items.length}건 보고`));
+        tr.appendChild(tdDept);
 
-          if (!state.compactMode && lg.pc) {
-            body.appendChild(el("span", { class: "log-pc" }, `[${lg.pc}]`));
+        const tdTitle = el("td");
+        if (items.length === 0) {
+          tdTitle.appendChild(el("span", { style: { color: "#94A3B8" } }, "해당 날짜 기록 없음"));
+        } else {
+          tdTitle.appendChild(el("div", { class: "rpt-title-main" }, items[0].content));
+          if (items.length > 1) {
+            tdTitle.appendChild(
+              el("span", { class: "rpt-title-more" }, `외 ${items.length - 1}건 더보기 — 클릭하면 모든 세부 업무와 산출물이 펼쳐집니다`)
+            );
+          } else if (items[0].detail || items[0].keyMemory || items[0].artifact) {
+            tdTitle.appendChild(
+              el("span", { class: "rpt-title-more" }, "클릭하면 세부 수행 내역 · 핵심 기억 · 산출물 · 익일 할 일이 펼쳐집니다")
+            );
           }
-          li.appendChild(body);
-          ul.appendChild(li);
         }
-        card.appendChild(ul);
+        tr.appendChild(tdTitle);
+
+        const repStatus = items.length ? (items[items.length - 1].status || "완료") : "대기";
+        const repQa = items.length ? (items[items.length - 1].qa || "통과") : "대기";
+
+        const tdStatus = el("td", { style: { textAlign: "center" } });
+        tdStatus.appendChild(el("span", { class: `badge-status ${statusBadgeClass(repStatus)}` }, repStatus));
+        tr.appendChild(tdStatus);
+
+        const tdQa = el("td", { style: { textAlign: "center" } });
+        tdQa.appendChild(el("span", { class: `badge-qa ${qaBadgeClass(repQa)}` }, repQa));
+        tr.appendChild(tdQa);
+
+        const tdExp = el("td", { class: "no-print", style: { textAlign: "center" } });
+        tdExp.appendChild(el("span", { class: "expand-chevron" }, "▼"));
+        tr.appendChild(tdExp);
+
+        tbody.appendChild(tr);
+
+        // 상세 펼침 행
+        if (isExpanded) {
+          const dtr = el("tr", { class: "rpt-detail-row" });
+          const dtd = el("td", { colspan: "5" });
+          const stack = el("div", { class: "detail-stack" });
+
+          if (items.length === 0) {
+            stack.appendChild(el("div", { style: { fontSize: "12.5px", color: "#64748B" } }, "이 날짜에는 해당 부서의 보고 기록이 없습니다."));
+          } else {
+            for (const lg of items) {
+              const entry = el("div", { class: "detail-entry" });
+
+              const eHead = el("div", { class: "detail-entry-head" });
+              eHead.appendChild(el("span", { class: "log-time" }, lg.time || "--:--"));
+              if (lg.category) eHead.appendChild(el("span", { class: "log-cat" }, lg.category));
+              if (lg.pc) eHead.appendChild(el("span", { class: "log-pc" }, `💻 ${lg.pc}`));
+              if (lg.model) eHead.appendChild(el("span", { class: "log-pc" }, `🤖 ${lg.model}`));
+              eHead.appendChild(el("span", { class: `badge-status ${statusBadgeClass(lg.status)}` }, lg.status || "완료"));
+              eHead.appendChild(el("span", { class: `badge-qa ${qaBadgeClass(lg.qa)}` }, `QA ${lg.qa || "통과"}`));
+              eHead.appendChild(el("div", { class: "detail-entry-title" }, lg.content));
+              entry.appendChild(eHead);
+
+              const grid = el("div", { class: "detail-grid" });
+
+              // 1) 세부 수행 내역
+              const detailPoints = splitPoints(lg.detail);
+              const bDetail = el("div", { class: "detail-block full" });
+              bDetail.appendChild(el("div", { class: "detail-block-label" }, "📋 세부 수행 내역"));
+              if (detailPoints.length) {
+                const ul = el("ul", { class: "detail-bullets" });
+                for (const pt of detailPoints) ul.appendChild(el("li", null, pt));
+                bDetail.appendChild(ul);
+              } else {
+                bDetail.appendChild(el("div", { style: { fontSize: "12.5px", color: "#475569" } }, lg.content));
+              }
+              grid.appendChild(bDetail);
+
+              // 2) 기억할 핵심 사항
+              const memPoints = splitPoints(lg.keyMemory);
+              if (memPoints.length) {
+                const bMem = el("div", { class: "detail-block mem" });
+                bMem.appendChild(el("div", { class: "detail-block-label" }, "💡 기억할 핵심 사항"));
+                const ul = el("ul", { class: "detail-bullets" });
+                for (const pt of memPoints) ul.appendChild(el("li", null, pt));
+                bMem.appendChild(ul);
+                grid.appendChild(bMem);
+              }
+
+              // 3) 산출물 · 결과 파일
+              const artPoints = splitPoints(lg.artifact);
+              if (artPoints.length) {
+                const bArt = el("div", { class: "detail-block" });
+                bArt.appendChild(el("div", { class: "detail-block-label" }, "📦 산출물 · 결과물"));
+                const chips = el("div", { class: "artifact-chips" });
+                for (const ap of artPoints) {
+                  if (isSafeHttpUrl(ap)) {
+                    chips.appendChild(el("a", {
+                      class: "artifact-chip",
+                      href: ap,
+                      target: "_blank",
+                      rel: "noopener noreferrer",
+                    }, `🔗 ${ap}`));
+                  } else {
+                    chips.appendChild(el("span", { class: "artifact-chip" }, ap));
+                  }
+                }
+                bArt.appendChild(chips);
+                grid.appendChild(bArt);
+              }
+
+              // 4) 익일 할 일 (+ 원클릭 이월 등록 버튼)
+              const todoPoints = splitPoints(lg.nextTodo);
+              if (todoPoints.length) {
+                const bTodo = el("div", { class: "detail-block todo full" });
+                const lbl = el("div", { class: "detail-block-label" });
+                lbl.appendChild(el("span", null, "📌 익일 할 일 (후속 과제)"));
+                const addCoBtn = el("button", { type: "button", class: "btn btn-sm no-print" }, "+ 이월 목록에 등록");
+                addCoBtn.addEventListener("click", async (ev) => {
+                  ev.stopPropagation();
+                  try {
+                    const res = await apiCall("upsertCarryover", {
+                      sourceDate: dateStr,
+                      dept: d.label,
+                      title: todoPoints.join(" / "),
+                      status: "OPEN",
+                    });
+                    if (!res.ok) throw new Error(res.error);
+                    state.carryovers = res.carryovers || [];
+                    renderStats();
+                    renderCarryovers();
+                    showToast("📌 이월 할 일 목록에 추가되었습니다.");
+                  } catch (err) {
+                    showToast(err.message || "이월 등록 실패");
+                  }
+                });
+                lbl.appendChild(addCoBtn);
+                bTodo.appendChild(lbl);
+
+                const ul = el("ul", { class: "detail-bullets" });
+                for (const pt of todoPoints) ul.appendChild(el("li", null, pt));
+                bTodo.appendChild(ul);
+                grid.appendChild(bTodo);
+              }
+
+              entry.appendChild(grid);
+              stack.appendChild(entry);
+            }
+          }
+
+          // 부서별 대표님 개별 지시 메모
+          const noteBar = el("div", { class: "dept-note-bar no-print" });
+          noteBar.appendChild(el("label", null, `✍️ ${d.short} 지시 메모`));
+          const noteInput = el("input", {
+            type: "text",
+            "data-dept-note": d.key,
+            placeholder: `${d.label} 담당 매니저에게 남길 지시사항...`,
+            value: (approval.deptNotes && approval.deptNotes[d.key]) || "",
+          });
+          noteBar.appendChild(noteInput);
+          stack.appendChild(noteBar);
+
+          dtd.appendChild(stack);
+          dtr.appendChild(dtd);
+          tbody.appendChild(dtr);
+        }
       }
 
-      // 부서별 대표님 개별 지시 메모
-      const noteBar = el("div", { class: "dept-note-bar no-print" });
-      const noteInput = el("input", {
-        type: "text",
-        "data-dept-note": d.key,
-        placeholder: `${d.short} 담당 매니저에게 남길 지시 메모...`,
-        value: (approval.deptNotes && approval.deptNotes[d.key]) || "",
-      });
-      noteBar.appendChild(noteInput);
-      card.appendChild(noteBar);
-
-      cardsWrap.appendChild(card);
-    }
-
-    if (renderedCount === 0) {
-      const emptyBox = el("div", {
-        style: {
-          textAlign: "center",
-          padding: "36px 16px",
-          color: "#64748B",
-          fontSize: "13.5px",
-          border: "1px dashed #CBD5E1",
-          borderRadius: "10px",
-        },
-      }, "이 날짜에는 아직 기록된 업무일지가 없습니다. 달력에서 점(●)이 표시된 날짜를 클릭해 보세요.");
-      cardsWrap.appendChild(emptyBox);
+      table.appendChild(tbody);
+      host.appendChild(table);
     }
 
     $("chiefNoteInput").value = approval.chiefNote || "";
     $("approvalStatusText").textContent = approval.updatedAt
-      ? `마지막 저장: ${approval.updatedAt}`
-      : "저장 시 구글 시트(대표님_결재및지시)에 즉시 기록됩니다.";
+      ? `마지막 저장: ${approval.updatedAt} (회사·집 실시간 공유)`
+      : "저장 시 구글 시트(대표님_결재및지시)에 즉시 기록되어 회사·집 어디서나 공유됩니다.";
   }
 
   function collectDeptNotesFromDom() {
@@ -1139,21 +1344,51 @@
       loadMonth(t.slice(0, 7), false);
     });
 
-    // 보고서 툴바
-    $("toggleCompactBtn").addEventListener("click", () => {
-      state.compactMode = !state.compactMode;
-      $("toggleCompactBtn").textContent = state.compactMode ? "전체 상세 보기" : "핵심 요약 모드";
+    // 보고서 툴바 (전체 상세 펼치기/접기 + 스마트 A4 인쇄)
+    $("toggleExpandAllBtn").addEventListener("click", () => {
+      const dateStr = state.selectedDate;
+      const data = state.monthCache[state.currentMonth] || { logs: [] };
+      const dayLogs = (data.logs || []).filter((l) => l.date === dateStr);
+      const activeKeys = DEPTS
+        .filter((d) => state.selectedDept === "ALL"
+          ? dayLogs.some((l) => (l.deptKey === "all" ? "chief" : (DEPT_MAP[l.deptKey] ? l.deptKey : "chief")) === d.key)
+          : d.key === state.selectedDept)
+        .map((d) => `${dateStr}:${d.key}`);
+
+      const allOpen = activeKeys.length > 0 && activeKeys.every((k) => state.expandedDepts.has(k));
+      if (allOpen) activeKeys.forEach((k) => state.expandedDepts.delete(k));
+      else activeKeys.forEach((k) => state.expandedDepts.add(k));
       renderSelectedDayReport();
     });
     $("approveBtn").addEventListener("click", () => saveApprovalOrNote(true));
     $("saveNoteBtn").addEventListener("click", () => saveApprovalOrNote(false));
     $("printReportBtn").addEventListener("click", () => {
-      // 인쇄 직전 금고 뷰 강제 비노출 보장
       if (state.currentView !== "report") {
         showToast("업무보고서 화면에서만 A4 인쇄가 가능합니다.");
         return;
       }
+      // 접혀 있는 상태면 인쇄 직전 전체 상세를 자동으로 펼쳐 삼성·오키 프린터로 풍성하게 출력
+      const dateStr = state.selectedDate;
+      const prevExpanded = new Set(state.expandedDepts);
+      const hasAnyOpen = [...state.expandedDepts].some((k) => k.startsWith(`${dateStr}:`));
+      if (!hasAnyOpen) {
+        DEPTS.forEach((d) => state.expandedDepts.add(`${dateStr}:${d.key}`));
+        renderSelectedDayReport();
+      }
       window.print();
+      if (!hasAnyOpen) {
+        state.expandedDepts = prevExpanded;
+        renderSelectedDayReport();
+      }
+    });
+
+    // 탭 복귀/창 활성화 시 자동 최신화 (회사에서 보던 창을 집에서 다시 열어도 최신 상태 자동 반영)
+    document.addEventListener("visibilitychange", () => {
+      if (!document.hidden && state.token && state.currentView === "report") {
+        if (Date.now() - state.lastSyncAt > 20000) {
+          loadMonth(state.currentMonth, true, true);
+        }
+      }
     });
 
     // 이월 할 일 추가

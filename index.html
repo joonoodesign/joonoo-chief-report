@@ -5,11 +5,11 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <meta name="robots" content="noindex, nofollow" />
   <title>주누디자인 총괄 업무보고서 · 대표님 전용</title>
-  <link rel="manifest" href="./manifest.json?v=20261122_2152" />
+  <link rel="manifest" href="./manifest.json?v=20261122_2218" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;600;700;800&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="./styles.css?v=20261122_2152" />
+  <link rel="stylesheet" href="./styles.css?v=20261122_2218" />
 </head>
 <body>
   <!-- ==================== 1. 대표님 전용 6자리 PIN 잠금 화면 ==================== -->
@@ -179,21 +179,34 @@
             </div>
           </div>
 
-          <!-- 우측 컬럼: 선택 날짜 총괄 업무보고서 -->
-          <div class="panel" id="reportPanel">
+          <!-- 우측 컬럼: 선택 날짜 공식 업무보고서 양식 (v2.0) -->
+          <div class="panel report-paper" id="reportPanel">
             <div class="panel-head no-print">
-              <h2 class="panel-title">일일 총괄 업무보고서</h2>
+              <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
+                <h2 class="panel-title">공식 일일 업무보고서</h2>
+                <span id="liveSyncBadge" class="sync-pill" title="회사·집 실시간 중앙 클라우드 연동 (60초 자동 갱신)">
+                  <span class="sync-dot"></span>
+                  <span id="liveSyncText">실시간 동기화 중...</span>
+                </span>
+              </div>
               <div class="report-toolbar">
-                <button type="button" id="toggleCompactBtn" class="btn btn-sm">핵심 요약 모드</button>
+                <button type="button" id="toggleExpandAllBtn" class="btn btn-sm">📂 전체 상세 펼치기</button>
                 <button type="button" id="approveBtn" class="btn btn-ok btn-sm">✅ 대표님 결재 승인</button>
                 <button type="button" id="printReportBtn" class="btn btn-primary btn-sm">🖨️ A4 보고서 인쇄</button>
               </div>
             </div>
 
-            <!-- 인쇄 포함 표준 헤더 + 3단 결재란 -->
+            <!-- 공식 결재 문서 상단 띠 -->
+            <div class="report-top-band"></div>
+
+            <!-- 인쇄 포함 공식 문서 헤더 + 3단 결재란 -->
             <div class="report-header-box">
               <div>
-                <h2 id="reportDocTitle" class="report-doc-title">주누디자인 일일 업무보고서</h2>
+                <div class="report-doc-kicker">
+                  <span id="reportDocNo" class="doc-no-badge">JD-00000000</span>
+                  <span>주누디자인 AI 총괄본부 · 공식 보고 양식</span>
+                </div>
+                <h2 id="reportDocTitle" class="report-doc-title">일일 총괄 업무보고서</h2>
                 <div id="reportDocMeta" class="report-doc-meta">날짜를 선택해 주세요</div>
               </div>
               <div class="approval-grid" aria-label="결재란">
@@ -207,8 +220,28 @@
                 </div>
                 <div class="appr-col">
                   <div class="appr-head">대 표</div>
-                  <div class="appr-stamp-cell" id="stampCeo">미결재</div>
+                  <div class="appr-stamp-cell" id="stampCeo">결재 대기</div>
                 </div>
+              </div>
+            </div>
+
+            <!-- 공식 보고서 요약 메타 바 -->
+            <div class="report-meta-strip">
+              <div class="meta-cell">
+                <span class="meta-k">보고 일자</span>
+                <span id="metaDateVal" class="meta-v">-</span>
+              </div>
+              <div class="meta-cell">
+                <span class="meta-k">활동 부서 / 처리 건수</span>
+                <span id="metaCountVal" class="meta-v">-</span>
+              </div>
+              <div class="meta-cell">
+                <span class="meta-k">QA 품질 감리</span>
+                <span id="metaQaVal" class="meta-v">-</span>
+              </div>
+              <div class="meta-cell">
+                <span class="meta-k">회사·집 실시간 갱신</span>
+                <span id="metaSyncVal" class="meta-v">-</span>
               </div>
             </div>
 
@@ -217,15 +250,20 @@
             <!-- 부서별 필터 탭 -->
             <div id="deptTabs" class="dept-tabs no-print"></div>
 
-            <!-- 부서별 일지 카드 컨테이너 -->
-            <div id="deptCards" class="dept-cards"></div>
+            <!-- 공식 보고서 표 + 클릭 시 펼쳐지는 상세 서랍 -->
+            <div class="report-table-wrap">
+              <div class="report-hint no-print">
+                <span>💡 각 부서 행을 <strong>클릭</strong>하면 세부 수행 내역 · 기억할 핵심 사항 · 산출물 · 익일 할 일이 펼쳐집니다.</span>
+              </div>
+              <div id="reportTableHost"></div>
+            </div>
 
             <!-- 대표님 총괄 지시 메모 (다음 날 회의 안건 1순위 자동 연결) -->
             <div class="chief-note-box">
-              <label for="chiefNoteInput">✍️ 대표님 지시사항 · 다음 날 회의 안건 메모</label>
+              <label for="chiefNoteInput">✍️ 대표님 총괄 지시사항 · 다음 날 회의 1순위 안건</label>
               <textarea id="chiefNoteInput" placeholder="예: 내일 네이버 광고 입찰가 재확인 / 리플렛 상세페이지 점검 지시..."></textarea>
               <div class="chief-note-actions no-print">
-                <span id="approvalStatusText">저장 시 구글 시트(대표님_결재및지시)에 즉시 기록됩니다.</span>
+                <span id="approvalStatusText">저장 시 구글 시트(대표님_결재및지시)에 즉시 기록되어 회사·집 어디서나 공유됩니다.</span>
                 <button type="button" id="saveNoteBtn" class="btn btn-primary btn-sm">💾 지시 메모 저장</button>
               </div>
             </div>
@@ -316,6 +354,6 @@
 
   <div id="toast" class="toast" role="status" aria-live="polite"></div>
 
-  <script src="./app.js?v=20261122_2155"></script>
+  <script src="./app.js?v=20261122_2218"></script>
 </body>
 </html>
